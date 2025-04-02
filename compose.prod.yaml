@@ -1,0 +1,76 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: ./docker/production/nginx/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - laravel-build-production:/var/www/public/build
+      - ./ssl/cert.crt:/etc/ssl/certs/cert.crt
+      - ./ssl/key.key:/etc/ssl/private/key.key
+    environment:
+      - NGINX_HOST=${APP_URL}
+    networks:
+      - laravel-production
+    ports:
+      - 80:80
+      - 443:443
+    depends_on:
+      php-fpm:
+        condition: service_healthy
+
+  php-fpm:
+    build:
+      context: .
+      dockerfile: ./docker/common/php-fpm/Dockerfile
+      target: production
+    restart: unless-stopped
+    volumes:
+      - laravel-storage-production:/var/www/storage
+      - laravel-build-production:/var/www/public/build:ro
+      - .env:/var/www/.env
+    networks:
+      - laravel-production
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm-healthcheck"]
+      interval: 1s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:17.4
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DB=${DB_DATABASE}
+      - POSTGRES_USER=${DB_USERNAME}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres-data-production:/var/lib/postgresql/data
+    networks:
+      - laravel-production
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4.2-alpine3.21
+    restart: unless-stopped
+    networks:
+      - laravel-production
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  laravel-production:
+
+volumes:
+  postgres-data-production:
+  laravel-storage-production:
+  laravel-build-production:
